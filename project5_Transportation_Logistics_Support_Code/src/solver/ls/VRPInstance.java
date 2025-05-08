@@ -50,3 +50,5 @@ public class VRPInstance
 		System.out.println(demandOfCustomer[i] + " " + xCoordOfCustomer[i] + " " + yCoordOfCustomer[i]);
   }
 }
+
+
