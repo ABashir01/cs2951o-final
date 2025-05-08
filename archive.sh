@@ -9,4 +9,5 @@ zip -r archive.zip \
   compile.sh run.sh runAll.sh \
   report.pdf \
   team.txt \
-  results.log
+  results.log \
+  slides.pdf
