@@ -2,20 +2,21 @@ import sys
 import random
 
 from docplex.mp.model import Model
-import numpy  as np
+import numpy as np
+
 
 class VRPInstance:
     def __init__(self, file_name):
         # VRP Input Parameters
         self.num_customers = 0  # the number of customers
-        self.num_vehicles = 0   # the number of vehicles
+        self.num_vehicles = 0  # the number of vehicles
         self.vehicle_capacity = 0  # the capacity of the vehicles
         self.demand_of_customer = []  # the demand of each customer
         self.x_coord_of_customer = []  # the x coordinate of each customer
         self.y_coord_of_customer = []  # the y coordinate of each customer
 
         try:
-            with open(file_name, 'r') as file:
+            with open(file_name, "r") as file:
                 lines = file.readlines()
         except FileNotFoundError as e:
             print(f"Error: in VRPInstance() {file_name}\n{e}")
@@ -40,7 +41,9 @@ class VRPInstance:
 
         # Print the customer data
         for i in range(self.num_customers):
-            print(f"{self.demand_of_customer[i]} {self.x_coord_of_customer[i]} {self.y_coord_of_customer[i]}")
+            print(
+                f"{self.demand_of_customer[i]} {self.x_coord_of_customer[i]} {self.y_coord_of_customer[i]}"
+            )
 
 
 class IPSolver:
@@ -49,13 +52,22 @@ class IPSolver:
         self.model = Model()
 
         # Step 1 : Add variables to model - edges of the graph for each vehicle
-        self.edges_for_each_vehicle = np.empty((self.instance.num_vehicles, self.instance.num_customers, self.instance.num_customers), dtype=object)
-        
+        self.edges_for_each_vehicle = np.empty(
+            (
+                self.instance.num_vehicles,
+                self.instance.num_customers,
+                self.instance.num_customers,
+            ),
+            dtype=object,
+        )
+
         for v in range(self.instance.num_vehicles):
             for i in range(self.instance.num_customers):
                 for j in range(self.instance.num_customers):
                     if i != j:
-                        self.edges_for_each_vehicle[v, i, j] = self.model.binary_var(name=f"x_{v}_{i}_{j}")
+                        self.edges_for_each_vehicle[v, i, j] = self.model.binary_var(
+                            name=f"x_{v}_{i}_{j}"
+                        )
 
         # print("self.edges_for_each_vehicle", self.edges_for_each_vehicle)
         # print("xcoord_of_customer", self.instance.x_coord_of_customer)
@@ -65,8 +77,11 @@ class IPSolver:
         self.u = np.empty((self.instance.num_customers), dtype=object)
 
         for i in range(1, self.instance.num_customers):
-            self.u[i] = self.model.continuous_var(name=f"u_{i}", lb=self.instance.demand_of_customer[i], ub=self.instance.vehicle_capacity)
-
+            self.u[i] = self.model.continuous_var(
+                name=f"u_{i}",
+                lb=self.instance.demand_of_customer[i],
+                ub=self.instance.vehicle_capacity,
+            )
 
         # Step 2: Add constraints to the model - in our graph, a node is a customer and the edges are the routes taken by the vehicles between customers
 
@@ -74,33 +89,58 @@ class IPSolver:
         for v in range(self.instance.num_vehicles):
             for j in range(self.instance.num_customers):
                 self.model.add_constraint(
-                    self.model.sum(self.edges_for_each_vehicle[v, i, j] for i in range(self.instance.num_customers) if i != j) ==
-                    self.model.sum(self.edges_for_each_vehicle[v, j, k] for k in range(self.instance.num_customers) if k != j)
+                    self.model.sum(
+                        self.edges_for_each_vehicle[v, i, j]
+                        for i in range(self.instance.num_customers)
+                        if i != j
+                    )
+                    == self.model.sum(
+                        self.edges_for_each_vehicle[v, j, k]
+                        for k in range(self.instance.num_customers)
+                        if k != j
+                    )
                 )
 
         # Must ensure each node is visited exactly once except for the depot (range starts from 1)
         for i in range(1, self.instance.num_customers):
             self.model.add_constraint(
-                self.model.sum(self.edges_for_each_vehicle[v, i, j] for j in range(self.instance.num_customers) for v in range(self.instance.num_vehicles) if i != j) == 1.0
+                self.model.sum(
+                    self.edges_for_each_vehicle[v, i, j]
+                    for j in range(self.instance.num_customers)
+                    for v in range(self.instance.num_vehicles)
+                    if i != j
+                )
+                == 1.0
             )
 
         # Must ensure every vehicle leaves + returns to the depot or does nothing
         for v in range(self.instance.num_vehicles):
             self.model.add_constraint(
-                self.model.sum(self.edges_for_each_vehicle[v, 0, j] for j in range(1, self.instance.num_customers)) <= 1.0
+                self.model.sum(
+                    self.edges_for_each_vehicle[v, 0, j]
+                    for j in range(1, self.instance.num_customers)
+                )
+                <= 1.0
             )
 
             self.model.add_constraint(
-                self.model.sum(self.edges_for_each_vehicle[v, i, 0] for i in range(1, self.instance.num_customers)) <= 1.0
+                self.model.sum(
+                    self.edges_for_each_vehicle[v, i, 0]
+                    for i in range(1, self.instance.num_customers)
+                )
+                <= 1.0
             )
 
         # Must ensure that the capacity constraint is satisfied
         for v in range(self.instance.num_vehicles):
             self.model.add_constraint(
-                self.model.sum(self.edges_for_each_vehicle[v, i, j] * self.instance.demand_of_customer[j] 
-                               for i in range(self.instance.num_customers) 
-                               for j in range(self.instance.num_customers) 
-                               if i != j) 
+                self.model.sum(
+                    self.edges_for_each_vehicle[v, i, j]
+                    * self.instance.demand_of_customer[j]
+                    for i in range(self.instance.num_customers)
+                    for j in range(self.instance.num_customers)
+                    if i != j
+                )
                 <= self.instance.vehicle_capacity
             )
 
@@ -110,17 +150,27 @@ class IPSolver:
                 for j in range(1, self.instance.num_customers):
                     if i != j:
                         self.model.add_constraint(
-                            self.u[j] - self.u[i] >= self.instance.demand_of_customer[j] - self.instance.vehicle_capacity * (1 - self.edges_for_each_vehicle[v, i, j])
+                            self.u[j] - self.u[i]
+                            >= self.instance.demand_of_customer[j]
+                            - self.instance.vehicle_capacity
+                            * (1 - self.edges_for_each_vehicle[v, i, j])
                         )
-        
 
         # Step 3: Objective Function
         def euclidean_distance(i, j):
             return np.sqrt(
-                (self.instance.x_coord_of_customer[i] - self.instance.x_coord_of_customer[j]) ** 2 +
-                (self.instance.y_coord_of_customer[i] - self.instance.y_coord_of_customer[j]) ** 2
+                (
+                    self.instance.x_coord_of_customer[i]
+                    - self.instance.x_coord_of_customer[j]
+                )
+                ** 2
+                + (
+                    self.instance.y_coord_of_customer[i]
+                    - self.instance.y_coord_of_customer[j]
+                )
+                ** 2
             )
-        
+
         self.model.minimize(
             self.model.sum(
                 self.edges_for_each_vehicle[v, i, j] * euclidean_distance(i, j)
@@ -132,7 +182,6 @@ class IPSolver:
         )
 
     def solve(self):
-
         solution = self.model.solve()
 
         if solution:
@@ -141,7 +190,7 @@ class IPSolver:
         else:
             print("No solution found.")
             return None
-        
+
 
 class HopefulDream:
     def __init__(self, instance: VRPInstance):
@@ -150,7 +199,7 @@ class HopefulDream:
         pass
 
     def dream(self):
-        min_val = float('inf')
+        min_val = float("inf")
 
         for i in range(1000):
             hopeful_number = np.random.randint(0, 9999999)
@@ -160,14 +209,10 @@ class HopefulDream:
             if solution:
                 min_val = min(min_val, solution.objective_value)
 
-            print(f"Iteration {i}: Objective Value = {solution.objective_value if solution else 'No Solution'}, Min Value = {min_val}")
+            print(
+                f"Iteration {i}: Objective Value = {solution.objective_value if solution else 'No Solution'}, Min Value = {min_val}"
+            )
 
         print("\n")
 
-        
         return min_val
-            
-
-        
-
-

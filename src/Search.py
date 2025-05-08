@@ -1,5 +1,8 @@
 from simanneal import Annealer
 
+from VRPInstance import VRPInstance
+
+
 class VRPAnnealer(Annealer):
     def __init__(self, state, instance: VRPInstance):
         self.instance = instance
@@ -11,11 +14,12 @@ class VRPAnnealer(Annealer):
     def energy(self):
         pass
 
+
 def search(instance: VRPInstance, init):
     vrp = VRPAnnealer(init, instance)
 
     # automatically search for a schedule
-    sched = vrp.auto(minutes=0.5) 
+    sched = vrp.auto(minutes=0.5)
     vrp.set_schedule(sched)
 
     sol, dist = vrp.anneal()
