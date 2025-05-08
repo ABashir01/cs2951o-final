@@ -1,4 +1,3 @@
-use rand::seq::SliceRandom;
 use rand::{Rng, rng};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -68,14 +67,14 @@ fn two_opt(route: &mut Route, dist: &DistanceMatrix) {
     }
 }
 
-fn create_initial_solution(
+fn initial_sweep(
     customers: &[Customer],
     dist: &DistanceMatrix,
     vehicle_count: usize,
     capacity: usize,
 ) -> Vec<Route> {
     let depot = &customers[0];
-    let mut polar_customers: Vec<_> = customers
+    let mut polar_customers_sorted: Vec<_> = customers
         .iter()
         .skip(1)
         .map(|c| {
@@ -84,7 +83,11 @@ fn create_initial_solution(
         })
         .collect();
 
-    polar_customers.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    polar_customers_sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    let index = rng().random_range(0..polar_customers_sorted.len());
+    let mut polar_customers: Vec<_> = polar_customers_sorted[index..].to_vec();
+    polar_customers.extend(&polar_customers_sorted[..index]);
 
     let mut solution = Vec::with_capacity(vehicle_count);
     let mut current_route = Route {
@@ -127,6 +130,15 @@ fn create_initial_solution(
     }
 
     solution
+}
+
+fn initial(
+    customers: &[Customer],
+    dist: &DistanceMatrix,
+    vehicle_count: usize,
+    capacity: usize,
+) -> Vec<Route> {
+    initial_sweep(customers, dist, vehicle_count, capacity)
 }
 
 fn total_cost(solution: &[Route]) -> f64 {
@@ -172,54 +184,54 @@ fn accept(delta: f64, temp: f64) -> bool {
     }
 }
 
-fn solve_cvrp(
-    customers: &[Customer],
-    vehicle_count: usize,
-    capacity: usize,
-    time_limit: Duration,
-) -> Vec<Route> {
-    let dist = compute_distance_matrix(customers);
-    let mut best = create_initial_solution(customers, &dist, vehicle_count, capacity);
-    let mut current = best.clone();
-    let mut best_cost = total_cost(&best);
-    let mut temp = 10000.0;
+// fn solve_cvrp(
+// customers: &[Customer],
+// vehicle_count: usize,
+// capacity: usize,
+// time_limit: Duration,
+// ) -> Vec<Route> {
+// let dist = compute_distance_matrix(customers);
+// let mut best = initial(customers, &dist, vehicle_count, capacity);
+// let mut current = best.clone();
+// let mut best_cost = total_cost(&best);
+// let mut temp = 10000.0;
 
-    let start = Instant::now();
+// let start = Instant::now();
 
-    let mut stagnation_counter = 0;
-    let stagnation_limit = 10_000;
+// let mut stagnation_counter = 0;
+// let stagnation_limit = 10_000;
 
-    while start.elapsed() < time_limit {
-        let mut candidate = current.clone();
-        perturb(&mut candidate, customers, &dist, capacity);
-        for route in &mut candidate {
-            two_opt(route, &dist);
-        }
+// while start.elapsed() < time_limit {
+// let mut candidate = current.clone();
+// perturb(&mut candidate, customers, &dist, capacity);
+// for route in &mut candidate {
+// two_opt(route, &dist);
+// }
 
-        let candidate_cost = total_cost(&candidate);
-        if accept(candidate_cost - total_cost(&current), temp) {
-            current = candidate;
-            if candidate_cost < best_cost {
-                best = current.clone();
-                best_cost = candidate_cost;
-                stagnation_counter = 0; // reset on improvement
-            } else {
-                stagnation_counter += 1;
-            }
-        } else {
-            stagnation_counter += 1;
-        }
+// let candidate_cost = total_cost(&candidate);
+// if accept(candidate_cost - total_cost(&current), temp) {
+// current = candidate;
+// if candidate_cost < best_cost {
+// best = current.clone();
+// best_cost = candidate_cost;
+// stagnation_counter = 0; // reset on improvement
+// } else {
+// stagnation_counter += 1;
+// }
+// } else {
+// stagnation_counter += 1;
+// }
 
-        if stagnation_counter >= stagnation_limit {
-            println!("Terminating early due to stagnation.");
-            break;
-        }
+// if stagnation_counter >= stagnation_limit {
+// println!("Terminating early due to stagnation.");
+// break;
+// }
 
-        temp *= 0.995;
-    }
+// temp *= 0.995;
+// }
 
-    best
-}
+// best
+// }
 
 fn solve_cvrp_with_restarts(
     customers: &[Customer],
@@ -231,11 +243,10 @@ fn solve_cvrp_with_restarts(
     let mut best_overall = Vec::new();
     let mut best_cost = f64::INFINITY;
 
-    let mut stagnation_counter = 0;
-    let stagnation_limit = 10;
+    // let mut stagnation_counter = 0;
+    // let stagnation_limit = 100;
 
     let start = Instant::now();
-    let mut rng = rng();
 
     while start.elapsed() < total_time_limit {
         let elapsed = start.elapsed();
@@ -245,51 +256,24 @@ fn solve_cvrp_with_restarts(
             break;
         };
 
-        // Randomize customer order before sweep
-        let mut shuffled_customers = customers[1..].to_vec();
-        shuffled_customers.shuffle(&mut rng);
-        let mut randomized_customers = vec![customers[0]];
-        randomized_customers.extend(shuffled_customers);
-
         // Generate randomized initial solution
-        let initial =
-            create_initial_solution(&randomized_customers, &dist, vehicle_count, capacity);
-
-        println!("INITIAL");
-        for route in &initial {
-            if route.load > capacity {
-                println!("{}", route.load);
-            }
-        }
+        let initial = initial(customers, &dist, vehicle_count, capacity);
 
         // Simulated annealing on this initial solution
-        let solution = solve_cvrp_sa(
-            &randomized_customers,
-            &dist,
-            initial,
-            capacity,
-            remaining_time,
-        );
-
-        println!("SOLUTION");
-        for route in &solution {
-            if route.load > capacity {
-                println!("{}", route.load);
-            }
-        }
+        let solution = solve_cvrp_sa(customers, &dist, initial, capacity, remaining_time);
 
         let cost = total_cost(&solution);
         if cost < best_cost {
             best_cost = cost;
             best_overall = solution;
-            stagnation_counter = 0;
+            // stagnation_counter = 0;
         } else {
-            stagnation_counter += 1;
+            // stagnation_counter += 1;
         }
 
-        if stagnation_counter >= stagnation_limit {
-            break;
-        }
+        // if stagnation_counter >= stagnation_limit {
+        // break;
+        // }
     }
 
     best_overall
@@ -415,14 +399,38 @@ fn output(solution: &Vec<Route>, filename: &str) {
 
 fn main() {
     let filename = std::env::args().nth(1).unwrap();
-    let instance = parse(&filename);
 
-    let best_solution = solve_cvrp_with_restarts(
+    let now = Instant::now();
+    let instance = parse(&filename);
+    let solution = solve_cvrp_with_restarts(
         &instance.customers,
         instance.vehicle_count,
         instance.vehicle_capacity,
-        Duration::from_secs(5),
+        Duration::from_secs(180),
     );
+    let time = now.elapsed();
 
-    output(&best_solution, &format!("{}.sol", filename));
+    output(&solution, &format!("{}.sol", filename));
+
+    let result = total_cost(&solution);
+    let sol = solution
+        .iter()
+        .map(|route| {
+            route
+                .customers
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    print!(
+        r#"{{"Instance": "{instance}", "Time": "{time:.2}", "Result": "{result}", "Solution": "{sol}"}}"#,
+        instance = filename,
+        time = time.as_secs_f64(),
+        result = result,
+        sol = sol,
+    );
 }
