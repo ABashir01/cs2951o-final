@@ -73,51 +73,138 @@ fn initial_sweep(
     vehicle_count: usize,
     capacity: usize,
 ) -> Vec<Route> {
-    let depot = &customers[0];
-    let mut polar_customers_sorted: Vec<_> = customers
-        .iter()
-        .skip(1)
-        .map(|c| {
-            let angle = (c.y - depot.y).atan2(c.x - depot.x);
-            (angle, c)
-        })
-        .collect();
 
-    polar_customers_sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    // ----------------POLAR SWEEP---------------------------------------------------
+    
+    // let depot = &customers[0];
+    // let mut polar_customers_sorted: Vec<_> = customers
+    //     .iter()
+    //     .skip(1)
+    //     .map(|c| {
+    //         let angle = (c.y - depot.y).atan2(c.x - depot.x);
+    //         (angle, c)
+    //     })
+    //     .collect();
 
-    let index = rng().random_range(0..polar_customers_sorted.len());
-    let mut polar_customers: Vec<_> = polar_customers_sorted[index..].to_vec();
-    polar_customers.extend(&polar_customers_sorted[..index]);
+    // polar_customers_sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-    let mut solution = Vec::with_capacity(vehicle_count);
-    let mut current_route = Route {
-        customers: vec![0], // Start at depot
-        load: 0,
-        cost: 0.0,
-    };
+    // let index = rng().random_range(0..polar_customers_sorted.len());
+    // let mut polar_customers: Vec<_> = polar_customers_sorted[index..].to_vec();
+    // polar_customers.extend(&polar_customers_sorted[..index]);
 
-    for &(_, cust) in &polar_customers {
-        if current_route.load + cust.demand > capacity {
-            current_route.customers.push(0); // Return to depot
-            current_route.cost = route_cost(&current_route.customers, dist);
-            solution.push(current_route);
+    // // Idea is to get average demand to turn polar sweep into a bin-packing problem sort of thing
+    // let mut rem_demand: usize = polar_customers_sorted.iter().map(|(_,c)| c.demand).sum();
+    // let mut rem_vehicles = vehicle_count;
 
-            current_route = Route {
-                customers: vec![0],
-                load: 0,
-                cost: 0.0,
-            };
+    // let mut solution = Vec::with_capacity(vehicle_count);
+    // let mut current_route = Route {
+    //     customers: vec![0], // Start at depot
+    //     load: 0,
+    //     cost: 0.0,
+    // };
+
+    // for &(_, cust) in &polar_customers {
+
+    //     let current_slot = ((rem_demand as f64/ rem_vehicles as f64).ceil() as usize).min(capacity);
+
+    //     if rem_vehicles > 1 && (current_route.load + cust.demand > capacity || current_route.load > current_slot) {
+    //         current_route.customers.push(0); // Return to depot
+    //         current_route.cost = route_cost(&current_route.customers, dist);
+    //         rem_demand -= current_route.load;
+    //         rem_vehicles -= 1;
+    //         solution.push(current_route);
+            
+
+    //         current_route = Route {
+    //             customers: vec![0],
+    //             load: 0,
+    //             cost: 0.0,
+    //         };
+    //     }
+
+    //     current_route.customers.push(cust.id);
+    //     current_route.load += cust.demand;
+    // }
+
+
+    // // Push final route
+    // if current_route.customers.len() > 1 {
+    //     current_route.customers.push(0);
+    //     current_route.cost = route_cost(&current_route.customers, dist);
+    //     solution.push(current_route);
+    // }
+
+    // // Pad with empty routes if fewer than vehicle_count
+    // while solution.len() < vehicle_count {
+    //     solution.push(Route {
+    //         customers: vec![0, 0],
+    //         load: 0,
+    //         cost: 0.0,
+    //     });
+    // }
+
+    // solution
+
+    // ----------------------------------------------------------------------------------
+
+
+    // ----------------BIN PACKING------------------------------------------------------
+
+    // Sort the whole thingamabob by demand descending - normal bin packing 
+    let mut og_demand_sorted: Vec<_> = customers.iter().skip(1).collect();
+    og_demand_sorted.sort_by(|a, b| b.demand.cmp(&a.demand));
+
+    // Introduce randomness by rotating the list (we need some type of randomness to make the existing restarts worthwhile and this shouldn't break anything)
+    let index = rng().random_range(0..og_demand_sorted.len());
+    let mut demand_sorted: Vec<_> = og_demand_sorted[index..].to_vec();
+    demand_sorted.extend(&og_demand_sorted[..index]);
+
+    let mut solution: Vec<Route> = Vec::with_capacity(vehicle_count);
+
+    for &cust in &demand_sorted {
+
+        let mut found = false;
+        let mut best_route_idx = 0;
+        let mut best_insert_pos = 0;
+        let mut best_diff = 0.0;
+        
+        for (r_idx, route) in solution.iter().enumerate() {
+
+            // Skip a route if it can't be inserted
+            if route.load + cust.demand > capacity { 
+                continue; 
+            }
+            
+            // try every possible insertion in a route
+            for pos in 1..route.customers.len() {
+                
+                let before = route.customers[pos - 1];
+                let after  = route.customers[pos];
+                let curr_diff = dist[before][cust.id]
+                          + dist[cust.id][after]
+                          - dist[before][after];
+                if !found || curr_diff < best_diff {
+                    found = true;
+                    best_diff = curr_diff;
+                    best_route_idx = r_idx;
+                    best_insert_pos = pos;
+                }
+
+            }
         }
-
-        current_route.customers.push(cust.id);
-        current_route.load += cust.demand;
-    }
-
-    // Push final route
-    if current_route.customers.len() > 1 {
-        current_route.customers.push(0);
-        current_route.cost = route_cost(&current_route.customers, dist);
-        solution.push(current_route);
+        
+        if found {
+            let r = &mut solution[best_route_idx];
+            r.customers.insert(best_insert_pos, cust.id);
+            r.load += cust.demand;
+            r.cost += best_diff;
+        } else {
+            solution.push(Route {
+                customers: vec![0, cust.id, 0],
+                load: cust.demand,
+                cost: dist[0][cust.id] * 2.0,
+            });
+        }
     }
 
     // Pad with empty routes if fewer than vehicle_count
@@ -130,6 +217,8 @@ fn initial_sweep(
     }
 
     solution
+
+    // ----------------------------------------------------------------------------------
 }
 
 fn initial(
@@ -406,7 +495,7 @@ fn main() {
         &instance.customers,
         instance.vehicle_count,
         instance.vehicle_capacity,
-        Duration::from_secs(180),
+        Duration::from_secs(5),
     );
     let time = now.elapsed();
 
