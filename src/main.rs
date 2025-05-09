@@ -75,7 +75,7 @@ fn initial_sweep(
 ) -> Vec<Route> {
 
     // ----------------POLAR SWEEP---------------------------------------------------
-    
+
     // let depot = &customers[0];
     // let mut polar_customers_sorted: Vec<_> = customers
     //     .iter()
@@ -150,73 +150,78 @@ fn initial_sweep(
 
     // ----------------BIN PACKING------------------------------------------------------
 
-    // Sort the whole thingamabob by demand descending - normal bin packing 
-    let mut og_demand_sorted: Vec<_> = customers.iter().skip(1).collect();
-    og_demand_sorted.sort_by(|a, b| b.demand.cmp(&a.demand));
+    // Sort the whole thingamabob by demand descending - normal bin packing
+    loop {
+        let mut og_demand_sorted: Vec<_> = customers.iter().skip(1).collect();
+        og_demand_sorted.sort_by(|a, b| b.demand.cmp(&a.demand));
 
-    // Introduce randomness by rotating the list (we need some type of randomness to make the existing restarts worthwhile and this shouldn't break anything)
-    let index = rng().random_range(0..og_demand_sorted.len());
-    let mut demand_sorted: Vec<_> = og_demand_sorted[index..].to_vec();
-    demand_sorted.extend(&og_demand_sorted[..index]);
+        // Introduce randomness by rotating the list (we need some type of randomness to make the existing restarts worthwhile and this shouldn't break anything)
+        let index = rng().random_range(0..og_demand_sorted.len());
+        let mut demand_sorted: Vec<_> = og_demand_sorted[index..].to_vec();
+        demand_sorted.extend(&og_demand_sorted[..index]);
 
-    let mut solution: Vec<Route> = Vec::with_capacity(vehicle_count);
+        let mut solution: Vec<Route> = Vec::with_capacity(vehicle_count);
 
-    for &cust in &demand_sorted {
+        for &cust in &demand_sorted {
 
-        let mut found = false;
-        let mut best_route_idx = 0;
-        let mut best_insert_pos = 0;
-        let mut best_diff = 0.0;
-        
-        for (r_idx, route) in solution.iter().enumerate() {
+            let mut found = false;
+            let mut best_route_idx = 0;
+            let mut best_insert_pos = 0;
+            let mut best_diff = 0.0;
+            
+            for (r_idx, route) in solution.iter().enumerate() {
 
-            // Skip a route if it can't be inserted
-            if route.load + cust.demand > capacity { 
-                continue; 
+                // Skip a route if it can't be inserted
+                if route.load + cust.demand > capacity { 
+                    continue; 
+                }
+                
+                // try every possible insertion in a route
+                for pos in 1..route.customers.len() {
+                    
+                    let before = route.customers[pos - 1];
+                    let after  = route.customers[pos];
+                    let curr_diff = dist[before][cust.id]
+                            + dist[cust.id][after]
+                            - dist[before][after];
+                    if !found || curr_diff < best_diff {
+                        found = true;
+                        best_diff = curr_diff;
+                        best_route_idx = r_idx;
+                        best_insert_pos = pos;
+                    }
+
+                }
             }
             
-            // try every possible insertion in a route
-            for pos in 1..route.customers.len() {
-                
-                let before = route.customers[pos - 1];
-                let after  = route.customers[pos];
-                let curr_diff = dist[before][cust.id]
-                          + dist[cust.id][after]
-                          - dist[before][after];
-                if !found || curr_diff < best_diff {
-                    found = true;
-                    best_diff = curr_diff;
-                    best_route_idx = r_idx;
-                    best_insert_pos = pos;
-                }
-
+            if found {
+                let r = &mut solution[best_route_idx];
+                r.customers.insert(best_insert_pos, cust.id);
+                r.load += cust.demand;
+                r.cost += best_diff;
+            } else {
+                solution.push(Route {
+                    customers: vec![0, cust.id, 0],
+                    load: cust.demand,
+                    cost: dist[0][cust.id] * 2.0,
+                });
             }
         }
-        
-        if found {
-            let r = &mut solution[best_route_idx];
-            r.customers.insert(best_insert_pos, cust.id);
-            r.load += cust.demand;
-            r.cost += best_diff;
-        } else {
+
+        // Pad with empty routes if fewer than vehicle_count
+        while solution.len() < vehicle_count {
             solution.push(Route {
-                customers: vec![0, cust.id, 0],
-                load: cust.demand,
-                cost: dist[0][cust.id] * 2.0,
+                customers: vec![0, 0],
+                load: 0,
+                cost: 0.0,
             });
         }
-    }
 
-    // Pad with empty routes if fewer than vehicle_count
-    while solution.len() < vehicle_count {
-        solution.push(Route {
-            customers: vec![0, 0],
-            load: 0,
-            cost: 0.0,
-        });
+        if solution.len() <= vehicle_count {
+            return solution;
+        }
+        
     }
-
-    solution
 
     // ----------------------------------------------------------------------------------
 }
@@ -495,7 +500,7 @@ fn main() {
         &instance.customers,
         instance.vehicle_count,
         instance.vehicle_capacity,
-        Duration::from_secs(5),
+        Duration::from_secs(300),
     );
     let time = now.elapsed();
 
